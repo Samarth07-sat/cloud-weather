@@ -1,0 +1,105 @@
+const cityInput = document.getElementById("cityInput");
+const searchBtn = document.getElementById("searchBtn");
+const currentEl = document.getElementById("current");
+const forecastEl = document.getElementById("forecast");
+const favListEl = document.getElementById("favList");
+const msgEl = document.getElementById("msg");
+
+const ICON = (code) => `https://openweathermap.org/img/wn/${code}@2x.png`;
+
+function showMsg(text, isError = false) {
+  msgEl.textContent = text || "";
+  msgEl.style.color = isError ? "#ff847c" : "#ffc56b";
+}
+
+function getFavorites() {
+  try { return JSON.parse(localStorage.getItem("favorites") || "[]"); }
+  catch { return []; }
+}
+function setFavorites(list) {
+  localStorage.setItem("favorites", JSON.stringify(list.slice(0, 8)));
+  renderFavorites();
+}
+function toggleFavorite(city) {
+  const favs = getFavorites();
+  const i = favs.indexOf(city);
+  if (i >= 0) favs.splice(i, 1); else favs.unshift(city);
+  setFavorites(favs);
+}
+
+function renderFavorites() {
+  const favs = getFavorites();
+  favListEl.innerHTML = "";
+  favs.forEach(c => {
+    const b = document.createElement("span");
+    b.className = "badge";
+    b.textContent = c;
+    b.onclick = () => loadWeather(c);
+    favListEl.appendChild(b);
+  });
+}
+renderFavorites();
+
+async function loadWeather(city) {
+  if (!city) return;
+  showMsg("Loading...");
+  currentEl.classList.add("hidden");
+  forecastEl.classList.add("hidden");
+
+  try {
+    const res = await fetch(`/api/weather?city=${encodeURIComponent(city)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || "Failed to fetch");
+
+    // Current
+    currentEl.innerHTML = `
+      <div class="row" style="justify-content: space-between;">
+        <div>
+          <div class="muted">${data.city}</div>
+          <div class="row" style="gap:14px; margin-top:6px;">
+            <img class="icon" src="${ICON(data.current.icon)}" alt="" />
+            <div>
+              <div class="temp">${data.current.temp}°C</div>
+              <div class="muted" style="text-transform: capitalize;">${data.current.description}</div>
+              <div class="muted">Feels like ${data.current.feels_like}°C</div>
+            </div>
+          </div>
+        </div>
+        <div class="center">
+          <button class="badge" title="Toggle favorite">⭐ Save</button>
+        </div>
+      </div>
+      <div class="hr"></div>
+      <div class="row" style="gap:18px; flex-wrap:wrap;">
+        <div class="badge">💧 Humidity: ${data.current.humidity}%</div>
+        <div class="badge">🌬️ Wind: ${data.current.wind} m/s</div>
+      </div>
+    `;
+    currentEl.querySelector("button").onclick = () => toggleFavorite(data.city);
+
+    // Forecast
+    forecastEl.innerHTML = data.daily.map(d => `
+      <div class="card center">
+        <div class="muted">${new Date(d.date).toDateString().slice(0, 10)}</div>
+        <img class="icon" src="${ICON(d.icon)}" alt="" />
+        <div class="temp">${d.temp}°C</div>
+        <div class="muted" style="text-transform: capitalize;">${d.description}</div>
+        <div class="muted">💧 ${d.humidity}% • 🌬️ ${d.wind} m/s</div>
+      </div>
+    `).join("");
+
+    currentEl.classList.remove("hidden");
+    forecastEl.classList.remove("hidden");
+    showMsg("");
+  } catch (e) {
+    showMsg(e.message || "Something went wrong", true);
+  }
+}
+
+// Default city on first load
+loadWeather(getFavorites()[0] || "Lucknow");
+
+searchBtn.onclick = () => loadWeather(cityInput.value.trim());
+cityInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") searchBtn.click();
+});

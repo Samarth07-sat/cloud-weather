@@ -1,0 +1,67 @@
+export default async function handler(req, res) {
+  try {
+    const { city } = req.query;
+    if (!city) return res.status(400).json({ error: "City is required" });
+
+    const key = process.env.OPENWEATHER_KEY;
+    if (!key) return res.status(500).json({ error: "Server missing API key" });
+
+    const base = "https://api.openweathermap.org/data/2.5";
+    const units = "metric";
+
+    const [curResp, foreResp] = await Promise.all([
+      fetch(`${base}/weather?q=${encodeURIComponent(city)}&units=${units}&appid=${key}`),
+      fetch(`${base}/forecast?q=${encodeURIComponent(city)}&units=${units}&appid=${key}`)
+    ]);
+
+    if (!curResp.ok) {
+      const j = await curResp.json().catch(() => ({}));
+      return res.status(curResp.status).json({ error: j?.message || "Failed to fetch current weather" });
+    }
+    if (!foreResp.ok) {
+      const j = await foreResp.json().catch(() => ({}));
+      return res.status(foreResp.status).json({ error: j?.message || "Failed to fetch forecast" });
+    }
+
+    const current = await curResp.json();
+    const forecast = await foreResp.json();
+
+    // pick one entry per day closest to 12:00
+    const byDay = {};
+    for (const item of forecast.list) {
+      const [date, time] = item.dt_txt.split(" ");
+      const hour = parseInt(time.slice(0, 2), 10);
+      if (!byDay[date] || Math.abs(hour - 12) < Math.abs(byDay[date].hour - 12)) {
+        byDay[date] = { ...item, hour };
+      }
+    }
+    const daily = Object.entries(byDay)
+      .map(([date, item]) => ({
+        date,
+        temp: Math.round(item.main.temp),
+        description: item.weather?.[0]?.description || "",
+        icon: item.weather?.[0]?.icon || "01d",
+        wind: item.wind?.speed ?? 0,
+        humidity: item.main?.humidity ?? 0
+      }))
+      .slice(0, 5);
+
+    const payload = {
+      city: `${current.name}, ${current.sys?.country || ""}`.trim(),
+      current: {
+        temp: Math.round(current.main?.temp),
+        feels_like: Math.round(current.main?.feels_like),
+        description: current.weather?.[0]?.description || "",
+        icon: current.weather?.[0]?.icon || "01d",
+        humidity: current.main?.humidity ?? 0,
+        wind: current.wind?.speed ?? 0
+      },
+      daily
+    };
+
+    res.setHeader("Cache-Control", "s-maxage=300, stale-while-revalidate");
+    res.status(200).json(payload);
+  } catch (e) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
