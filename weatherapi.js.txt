@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     const current = await curResp.json();
     const forecast = await foreResp.json();
 
-    // pick one entry per day closest to 12:00
+    // pick one forecast entry per day (closest to 12:00)
     const byDay = {};
     for (const item of forecast.list) {
       const [date, time] = item.dt_txt.split(" ");
